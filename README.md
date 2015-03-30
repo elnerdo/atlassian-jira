@@ -22,7 +22,7 @@ TBD
     $ docker-compose logs
 
 If you deploy the app for the first time you may need to restore the database
-from a backup for each app and adapt the database connection settings!
+from a backup!
 
 ### Debug (aka. go inside) an image
 
@@ -34,7 +34,10 @@ from a backup for each app and adapt the database connection settings!
 If you start this orchestration for the first time, a handy feature is to
 import your old data. If you're e.g. moving everything to another server
 you can put your database backups into the tmp folder and the db initscript
-will pick them up automagically on the first run.
+will pick them up automagically on the first run if there is no `data` folder
+
+
+    1. Approach with a dump file and tgz archive
 
     # move your jira db backup file to tmp (filename is important).
     $ mv jira.dump tmp/jira.dump
@@ -42,21 +45,58 @@ will pick them up automagically on the first run.
     # unpack your jira-home backup archive
     $ tar xzf jira-home.tgz --strip=1 -C home
 
-### Backup the home folders
 
-    $ mkdir -p backup/$(date +%F)
-      tar czf backup/$(date +%F)/jira-home.tgz home
+    2. Approach with bup
 
-### Backup the PostgreSQL data
+    # remove theses folder if present:
+    $ data/ tmp/ home/ dumps/
 
-    # backup the jira database
-    $ docker run -it --rm --link atlassian_database_1:db -v $(pwd):/tmp \
-        postgres sh -c 'pg_dump -U jira -h "$DB_PORT_5432_TCP_ADDR" \
-        -w jira > /tmp/jira.dump'
+    # move contents from the bup backup.
+    $ sudo mv jirabackup/jira/* /srv/data/jira
 
 ### Restore the PostgreSQL data
 
-    # restore the jira database backup
-    $ docker run -it --rm --link atlassian_database_1:db -v $(pwd):/tmp \
-        postgres sh -c 'pg_restore -U jira -h "$DB_PORT_5432_TCP_ADDR" \
-        -n public -w -d jira /tmp/jira.dump'
+To restore the postresql data you have two options:
+
+    1. Remove the `data` folder and put the dumpfile into `tmp`
+    2. Replace the `data` folder with a bup backuped `data` folder
+
+## Restoring with the fabfile or bup
+
+    # All commands have to be launched from within the root folder of the app.
+    $ /srv/data/jira
+
+Once you have run the restore command, you have to remove `data/ tmp/ dumps/ home/`
+Move the folders from the created jirabackup folder into the app root (where the deleted folders used to be).
+
+### Show all possible restore points:
+
+    sudo BUP_DIR=$(pwd)/backup bup ls jirabackup`
+
+### Restore latest backup:
+
+    # With the fabfile:
+    $ sudo fab restore
+
+    # Without the fabfile:
+    $ sudo BUP_DIR=$(pwd)/backup bup restore
+
+### Restore a specific backup:
+
+    # With the fabfile:
+    $ sudo fab restore:revision='2015-03-26-123711'
+
+    # Without the fabfile:
+    $ sudo BUP_DIR=$(pwd)/backup bup restore jirabackup/2015-03-26-123711/$(pwd)
+
+### Restore to a different folder than jirabackup
+
+By default bup will restore the backup to a folder called jirabackup.
+To restore to another folder you can use the `-C` flag or pass `'destination'`
+to the fabfile.
+
+    # With the fabfile:
+    $ sudo fab restore:destination='anotherlocation'
+
+    # Without the fabfile:
+    $ sudo BUP_DIR=$(pwd)/backup bup restore -C anotherlocation jirabackup/latest/$(pwd)
